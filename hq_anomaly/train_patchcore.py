@@ -2,7 +2,17 @@ import torch
 import torch.distributed
 import torchvision.datasets 
 import torchvision.transforms
+def custom_repr(self):
+    return f'{{Tensor:{tuple(self.shape)}}} {original_repr(self)}'
+
+original_repr = torch.Tensor.__repr__
+torch.Tensor.__repr__ = custom_repr
 import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+import sys
+from pathlib import Path
+root_path = Path(__file__).parent.parent
+sys.path.insert(0, str(root_path))
 from hq_anomaly import common
 from hq_anomaly import models
 import sys
@@ -34,7 +44,9 @@ def train(config: common.TrainConfig):
         torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225]),
     ])
-    train_path = os.path.join(data_path, 'train', 'good')
+    # train_path = os.path.join(data_path, 'train', 'good')
+    # valid_path = os.path.join(data_path, 'test')
+    train_path = os.path.join(data_path, 'train')
     valid_path = os.path.join(data_path, 'val')
     
     train_dataset = ImageSingleFolder(
@@ -72,7 +84,7 @@ def train(config: common.TrainConfig):
         pass
     # model.load("output/ckpt.pth")
     
-    dist_stats, confidence, accuracy, f1_score, precision, recall, precision_recall_curve = valid_patchcore.valid(model, folder=valid_path)
+    dist_stats, confidence, accuracy, f1_score, precision, recall, precision_recall_curve, roc_curve, fpr_zero_miss = valid_patchcore.valid(model, folder=valid_path)
     model.set_distance_stats(dist_stats)
 
     model.save(os.path.join(config.output_path, "ckpt.pth"))
@@ -81,8 +93,8 @@ def train(config: common.TrainConfig):
 
     with open(results_filename, 'w') as fout:
         # write header
-        fout.write("confidence,accuracy,f1_score,precision,recall\n")
-        fout.write(f"{confidence},{accuracy},{f1_score},{precision},{recall}\n")
+        fout.write("confidence,accuracy,f1_score,precision,recall,fpr_zero_miss\n")
+        fout.write(f"{confidence},{accuracy},{f1_score},{precision},{recall},{fpr_zero_miss}\n")
         pass
     precision_recall_curve_filename = os.path.join(config.output_path, "pr_curve_metric.csv")
     with open(precision_recall_curve_filename, 'w') as fout:
@@ -92,12 +104,21 @@ def train(config: common.TrainConfig):
             fout.write(f"{p:.4f},{r:.4f}\n")
             pass
         pass
+    roc_curve_filename = os.path.join(config.output_path, "roc_curve_metric.csv")
+    with open(roc_curve_filename, 'w') as fout:
+        # write header
+        fout.write("fpr,tpr,thr\n")
+        for f, t, h in zip(roc_curve[0], roc_curve[1], roc_curve[2]):
+            fout.write(f"{f:.4f},{t:.4f},{h:.4f}\n")
+            pass
+        pass
 
 
 
 if __name__ == "__main__":
     train_config = common.TrainConfig(
-        data_path=sys.argv[1],
+        data_path="/root/autodl-tmp/xianshuban_0721",
+        output_path="/root/hq_anomaly/hq_anomaly/output/0721_xianshuban",
         batch_size=1,
         num_epochs=200,
         num_data_workers=16,

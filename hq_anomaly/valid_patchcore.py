@@ -46,6 +46,23 @@ def valid(model: ViTPatchcore, folder: str):
     
     predict_scores = model.distance2proba((middle_dist, max_ng_dist), np.asarray(dists))
 
+    #取异常样本对应的预测概率
+    ng_scores = [predict_scores[i] for i, gt in enumerate(ground_truths) if gt == 1]
+    # 零漏检阈值：等于所有异常样本预测概率的最小值
+    confidence_zero_miss = np.min(ng_scores)
+
+    # 用该阈值生成预测标签（保证无漏检）
+    predict_labels_zero_miss = [1 if score >= confidence_zero_miss else 0 for score in predict_scores]
+
+    recall_zero = sklearn.metrics.recall_score(ground_truths, predict_labels_zero_miss)
+    # 漏检率
+    miss_rate_zero = 1 - recall_zero
+
+    # 零漏检下误检率FPR
+    from sklearn.metrics import confusion_matrix
+    tn, fp, fn, tp = confusion_matrix(ground_truths, predict_labels_zero_miss).ravel()
+    fpr_zero_miss = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+
     # calculate accuracy, f1_score, precision, recall
     precisions, recalls, thresholds = sklearn.metrics.precision_recall_curve(ground_truths, predict_scores)
     f1 = 2 * (precisions * recalls) / (precisions + recalls + 1e-8)
@@ -61,8 +78,9 @@ def valid(model: ViTPatchcore, folder: str):
     recall = sklearn.metrics.recall_score(ground_truths, predict_labels)
 
     precision_curve, recall_curve, _ = sklearn.metrics.precision_recall_curve(ground_truths, predict_scores)
+    fpr, tpr, thr = sklearn.metrics.roc_curve(ground_truths, predict_scores)
 
-    return (middle_dist, max_ng_dist), confidence, accuracy, f1_score, precision, recall, (precision_curve, recall_curve)
+    return (middle_dist, max_ng_dist), confidence, accuracy, f1_score, precision, recall, (precision_curve, recall_curve), (fpr, tpr, thr), fpr_zero_miss
 
 if __name__ == "__main__":
     pass
